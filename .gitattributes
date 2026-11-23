@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.png binary
+*.blp binary
+*.m2 binary
+*.skin binary
+*.dbc binary
+*.mpq binary
+*.MPQ binary
