@@ -11,6 +11,17 @@ edge when the hit lands. Plus data-driven telegraph bosses you can make with SQL
 - A C++ API any module or script can call, a GM command to preview, and an SQL-driven boss AI.
 - Self-made art: no Blizzard or retail files are shipped or needed.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![cone](docs/screenshots/cone.jpg) | ![line](docs/screenshots/line.jpg) |
+| Cone, 60° x 30 yd, the fill halfway | Line, 2 x 40 yd, over a hill |
+| ![nova](docs/screenshots/nova.jpg) | ![donut](docs/screenshots/donut.jpg) |
+| Nova around the boss | Dance: a nova and a donut at once |
+| ![dance](docs/screenshots/dance.jpg) | ![erupt](docs/screenshots/erupt.jpg) |
+| Dance, the inverse ring (stand near the boss) | Erupt: small novas on and around the target |
+
 ## How it works
 
 The 3.3.5a client can draw a model's texture as a *projected texture* (skin batch flag `0x4`): instead of drawing the
