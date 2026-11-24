@@ -9,7 +9,8 @@ edge when the hit lands. Plus data-driven telegraph bosses you can make with SQL
 - Hostile marks are orange-red, friendly (heal) marks green.
 - A fill grows from the boss to the edge over the cast time (the donut fades in), so players see when it lands.
 - A C++ API any module or script can call, a GM command to preview, and an SQL-driven boss AI.
-- Self-made art: no Blizzard or retail files are shipped or needed.
+- Self-made art: no Blizzard or retail files are shipped (see [Why no Blizzard files](#why-no-blizzard-files)).
+- Our test notes on projected textures, model writing and what did not work: [FINDINGS.md](FINDINGS.md).
 
 ## Screenshots
 
@@ -54,12 +55,29 @@ The SQL in `data/sql/db-world/` is applied by the DB updater at the next start (
 
 **Client**
 
-Download the MPQ from the latest [release](https://github.com/RockNetEngine/mod-ground-telegraphs/releases) and put it in
-the client's `Data\` folder as a patch, for example `Data\patch-G.MPQ`. Delete the client's `Cache` folder.
+The client needs two things in one patch MPQ (for example `Data\patch-G.MPQ`; delete the client's `Cache` folder after):
 
-The patch carries `DBFilesClient\GameObjectDisplayInfo.dbc` (stock rows + 252 new ones) and `Spells\Telegraph\*`. The
-client loads **one whole** `GameObjectDisplayInfo.dbc`, from the last patch that has it. If your server already ships a
-changed `GameObjectDisplayInfo.dbc`, build the patch yourself with your file as the base (below) and ship that.
+1. The art, `Spells\Telegraph\*` (567 files): download `patch-G.MPQ` from the latest
+   [release](https://github.com/RockNetEngine/mod-ground-telegraphs/releases), or build it (below).
+2. `DBFilesClient\GameObjectDisplayInfo.dbc` with the 252 new display rows. **You build this one yourself**, from the
+   `GameObjectDisplayInfo.dbc` your clients use now (extract it from the client, or take it from a patch you already
+   ship):
+
+```bash
+cd tools
+python3 telegraph_assets.py --base path/to/GameObjectDisplayInfo.dbc --out out
+```
+
+Then add `out/DBFilesClient/GameObjectDisplayInfo.dbc` to the patch under `DBFilesClient\`, for example with Ladik's MPQ
+Editor (open `patch-G.MPQ`, add the file with that path). The client loads **one whole** `GameObjectDisplayInfo.dbc`,
+from the last patch that has it, so the patch with the merged file must load after every other patch that ships one.
+
+### Why no Blizzard files
+
+`GameObjectDisplayInfo.dbc` is a Blizzard client data file. We don't redistribute Blizzard files, not even edited ones,
+so the release only carries our own art and the generator adds the rows to the file you already have. It also avoids a
+real problem: a shipped DBC would wipe out the rows of any other patch that changes the same file. Building it from your
+own copy keeps everyone's rows. Everything in this repository (code, models, textures) is our own work.
 
 ## Rebuild the client files (optional)
 
@@ -68,9 +86,10 @@ cd tools
 python3 telegraph_assets.py --base path/to/your/GameObjectDisplayInfo.dbc --out out
 ```
 
-This writes `out/Spells/Telegraph/*`, `out/DBFilesClient/GameObjectDisplayInfo.dbc` and
+This writes `out/Spells/Telegraph/*`, `out/DBFilesClient/GameObjectDisplayInfo.dbc` (with `--base`) and
 `out/ground_telegraph_variants.sql`. Pack the two folders into an MPQ (for example with Ladik's MPQ Editor: add
-`Spells` and `DBFilesClient` with their paths) and copy the SQL over `data/sql/db-world/ground_telegraph_variants.sql`.
+`Spells` and `DBFilesClient` with their paths) and, if you changed the grid or the IDs, copy the SQL over
+`data/sql/db-world/ground_telegraph_variants.sql`.
 The shape grid (cone angles, donut ratios, line proportions, fill times, colours) is at the top of the script. Same
 input, same bytes.
 
@@ -158,7 +177,8 @@ on rings and erupts; a scaled visual caster makes a breath or nova visual bigger
 ## Credits
 
 Built for and play-tested on the RockNetEngine solo / Playerbots server. The projected-texture flag came from 3.3.5
-modding forum knowledge (projected ground spell art such as Charred Earth). Code, models and textures are original.
+modding forum knowledge (projected ground spell art such as Charred Earth); what we found while testing it is in
+[FINDINGS.md](FINDINGS.md). Code, models and textures are original.
 
 ## License
 
