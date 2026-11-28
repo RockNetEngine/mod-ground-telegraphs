@@ -24,6 +24,16 @@ edge when the hit lands. Plus data-driven telegraph bosses you can make with SQL
 | ![dance](docs/screenshots/dance.jpg) | ![erupt](docs/screenshots/erupt.jpg) |
 | Dance, the inverse ring (stand near the boss) | Erupt: small novas on and around the target |
 
+Attack visuals (1.1): SpellVisualKits going off as the marks clear.
+
+| | |
+|---|---|
+| ![visual nova](docs/screenshots/visual_nova.jpg) | ![visual erupt](docs/screenshots/visual_erupt.jpg) |
+| An arcane nova on its mark | Ice spikes erupting on erupt marks |
+
+![visual cone](docs/screenshots/visual_cone.jpg)
+A frost wave running out over a cone (`visual_mode` wave)
+
 ## How it works
 
 The 3.3.5a client can draw a model's texture as a *projected texture* (skin batch flag `0x4`): instead of drawing the
