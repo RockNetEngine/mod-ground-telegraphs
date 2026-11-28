@@ -13,7 +13,7 @@
  *   m.size = 40.0f; m.param = 20.0f;          // outer / inner radius
  *   m.durationMs = 3000;
  *   ObjectGuid g = GroundTelegraph::Draw(boss, m);
- *   ... GroundTelegraph::HitMs(m) later (the fill is full, plus a short beat):
+ *   ... GroundTelegraph::RemoveMs(m) later (the fill is full): remove it; at HitMs(m) land the attack:
  *   GroundTelegraph::Remove(boss, g);         // gone at once, no fade
  *   if (GroundTelegraph::Contains(m, player->GetPositionX(), player->GetPositionY())) hit it;
  *
@@ -51,6 +51,9 @@ namespace GroundTelegraph
     // How long a full mark stays on the ground before it is removed and the attack lands (user 2026-11-27: 250 ms felt
     // like a fade in combat; 0 = the mark goes the moment its fill ends).
     constexpr uint32 FULL_HOLD_MS = 0;
+    // The mark is removed this long BEFORE the attack lands (user 2026-11-28: removed in the same update as the hit, the
+    // mark still showed under the first bursts on the client).
+    constexpr uint32 CLEAR_BEFORE_HIT_MS = 150;
 
     // Spawns the mark; it despawns by itself about 2 s after its fill (or call Remove). Empty guid when no variant
     // is loaded for that shape / colour.
@@ -59,7 +62,9 @@ namespace GroundTelegraph
     void Remove(WorldObject* owner, ObjectGuid const& guid);
     // The fill time of the model Draw picks for this mark (the nearest duration in the grid), in ms.
     uint32 FillMs(Mark const& m);
-    // When to remove the mark and land the attack, counted from Draw: FillMs + FULL_HOLD_MS.
+    // When to remove the mark, counted from Draw: FillMs + FULL_HOLD_MS.
+    uint32 RemoveMs(Mark const& m);
+    // When to land the attack (damage and visual), counted from Draw: RemoveMs + CLEAR_BEFORE_HIT_MS.
     uint32 HitMs(Mark const& m);
     // Exact hit test on the ground plane.
     bool Contains(Mark const& m, float px, float py);

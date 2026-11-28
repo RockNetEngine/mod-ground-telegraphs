@@ -110,7 +110,7 @@ gameobject_template 9530000–9530251 (block 9530000–9530899), creature 953099
 ## Usage
 
 - **Preview:** `.groundmark line|cone|nova|donut [size] [param] [ms] [friendly]` draws a mark at your feet (GM).
-- **C++ API:** `GroundTelegraph::Draw`, `HitMs`, `Contains`, `Remove` (`src/ground_telegraph.h`).
+- **C++ API:** `GroundTelegraph::Draw`, `RemoveMs`, `HitMs`, `Contains`, `Remove` (`src/ground_telegraph.h`).
 - **Data-driven bosses:** `ScriptName = 'npc_ground_telegraph_boss'` plus rows in `ground_telegraph_boss` /
   `ground_telegraph_attack`: lines, cones, novas, donuts, eruptions, dances, real casts, attack visuals (SpellVisualKits,
   beams, missiles). Example: `data/sql/examples/example_boss.sql`.

@@ -7,7 +7,8 @@
  * Shapes: 1 line, 2 cone (from the boss's edge toward its target), 3 nova, 4 donut (around the boss), 5 erupt (small
  * novas on and around the target), 6 dance (rings around the boss: bands "0-10,20-40"), 7 cast (a real, interruptible
  * cast of hit_spell at the target, no mark). Players standing in a mark when it ends are hit once each.
- * Timing: the mark fills, stays full for GroundTelegraph::FULL_HOLD_MS, is removed, and then the hit and the visual land.
+ * Timing: the mark fills, stays full for GroundTelegraph::FULL_HOLD_MS, is removed, and CLEAR_BEFORE_HIT_MS later the hit
+ * and the visual land.
  * Visual (visual_kit): a SpellVisualKit played once on invisible casters (visual_caster, default 9530999) placed when the
  * mark goes down, so the client knows them before the kit packet. visual_mode 0 = by shape (cone wave, nova single,
  * erupt single per mark, donut / dance ring), 1 wave (rows sweeping out over `visual_pace` ms), 2 scatter (points over the
@@ -448,6 +449,18 @@ public:
             _pending = int32(i);
             // the fill of the model actually drawn (the nearest duration in the grid), then a short beat while it is full
             _eruptIn = _marks.empty() ? a.delayMs : GroundTelegraph::HitMs(_marks.front());
+            if (!_marks.empty())
+            {
+                // the marks go CLEAR_BEFORE_HIT_MS before the hit: removed in the same update, they still showed under
+                // the first bursts. Erupt's Clear() then finds them gone.
+                std::vector<ObjectGuid> marks = _guids;
+                Creature* self = me;
+                me->m_Events.AddEventAtOffset([self, marks]()
+                {
+                    for (ObjectGuid const& g : marks)
+                        GroundTelegraph::Remove(self, g);
+                }, Milliseconds(GroundTelegraph::RemoveMs(_marks.front())));
+            }
             PlanVisual(a, _eruptIn);
         }
 

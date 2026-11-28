@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 (2026-11-28)
+
+### Fixed
+- The mark still showed under the first bursts of an attack visual (it was removed in the same server update as the
+  hit). It is now removed `CLEAR_BEFORE_HIT_MS` (150 ms) before the hit and the visual. New API
+  `GroundTelegraph::RemoveMs`; `HitMs` = `RemoveMs` + 150.
+
 ## 1.1.0 (2026-11-28)
 
 Attack visuals and timing. Tested in game on an AzerothCore Playerbots server; compile-checked (`-fsyntax-only`, no PCH)

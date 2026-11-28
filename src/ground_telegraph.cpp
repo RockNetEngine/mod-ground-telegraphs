@@ -212,9 +212,14 @@ namespace GroundTelegraph
         return v ? v->durationMs : m.durationMs;
     }
 
-    uint32 HitMs(Mark const& m)
+    uint32 RemoveMs(Mark const& m)
     {
         return FillMs(m) + FULL_HOLD_MS;
+    }
+
+    uint32 HitMs(Mark const& m)
+    {
+        return RemoveMs(m) + CLEAR_BEFORE_HIT_MS;
     }
 
     bool Contains(Mark const& m, float px, float py)

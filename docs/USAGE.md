@@ -28,10 +28,12 @@ m.size = 30.0f;                                        // length / radius / oute
 m.param = 60.0f;                                       // width / angle / inner radius
 m.durationMs = 3000;                                   // the nearest fill time in the grid is used
 ObjectGuid mark = GroundTelegraph::Draw(boss, m);      // despawns by itself ~2 s after its fill
-uint32 landIn = GroundTelegraph::HitMs(m);             // the real fill (+ FULL_HOLD_MS, 0): land the attack then
+uint32 clearIn = GroundTelegraph::RemoveMs(m);         // the real fill (+ FULL_HOLD_MS, 0): remove the mark then
+uint32 landIn = GroundTelegraph::HitMs(m);             // CLEAR_BEFORE_HIT_MS (150) later: land the attack then
 
-// when it lands: remove the mark first (at once, no fade), then hit
+// at clearIn: remove the mark (at once, no fade)
 GroundTelegraph::Remove(boss, mark);
+// at landIn: hit
 if (GroundTelegraph::Contains(m, player->GetPositionX(), player->GetPositionY()))
     /* hit the player */;
 ```
@@ -65,7 +67,7 @@ shape) is in `data/sql/examples/example_boss.sql`; run it by hand and `.npc add 
 | 7 cast | no mark: a real cast of `hit_spell` at the target (interruptible unless the spell isn't) | | |
 
 Other columns: `delay_ms` (the fill time; the nearest one in the grid is used, then the mark is removed the moment its
-fill ends and the attack lands), `every_ms` (0 = only as another attack's `next_attack`),
+fill ends and the attack lands 150 ms later), `every_ms` (0 = only as another attack's `next_attack`),
 `first_ms`, `next_attack` (the attack that follows at once: chain two dance rows for "safe ring, then the inverse"),
 `hit_spell` + `hit_damage` (exact direct damage of that spell's school, never misses; without `hit_damage` the spell is
 cast on each player hit: a stun, a knockback, a heal), `friendly` (green mark, hits friendly players: heals),
