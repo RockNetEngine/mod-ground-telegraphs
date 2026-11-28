@@ -7,6 +7,14 @@
  * Shapes: 1 line, 2 cone (from the boss's edge toward its target), 3 nova, 4 donut (around the boss), 5 erupt (small
  * novas on and around the target), 6 dance (rings around the boss: bands "0-10,20-40"), 7 cast (a real, interruptible
  * cast of hit_spell at the target, no mark). Players standing in a mark when it ends are hit once each.
+ * Timing: the mark fills, stays full for GroundTelegraph::FULL_HOLD_MS, is removed, and then the hit and the visual land.
+ * Visual (visual_kit): a SpellVisualKit played once on invisible casters (visual_caster, default 9530999) placed when the
+ * mark goes down, so the client knows them before the kit packet. visual_mode 0 = by shape (cone wave, nova single,
+ * erupt single per mark, donut / dance ring), 1 wave (rows sweeping out over `visual_pace` ms), 2 scatter (points over the
+ * area at random moments within the pace), 3 single (the centre of each mark; nova: visual_scale is for a 10 yd radius),
+ * 4 ring (points on the ring), 5 spokes (default for donut / dance rings: radial lines of bursts across the ring, a few
+ * seed spokes first, then a wave both ways to the next seed, all within the pace); nova_kit = the discs of a dance. beam_spell = a beam along a line, or a missile
+ * from the boss onto each erupt mark, landing on the hit. Bosses send no attack text (it spammed long fights).
  */
 #include "ground_telegraph.h"
 
@@ -15,6 +23,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
@@ -22,6 +31,7 @@
 #include "SpellMgr.h"
 #include "TemporarySummon.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <unordered_map>
@@ -40,22 +50,33 @@ namespace
         ATK_CAST  = 7
     };
 
-    constexpr uint32 DEFAULT_VISUAL_CASTER = 9530999;   // creature from the module SQL (invisible, casts visual_spell)
+    enum VisualMode : uint8
+    {
+        VIS_BY_SHAPE = 0,
+        VIS_WAVE     = 1,
+        VIS_SCATTER  = 2,
+        VIS_SINGLE   = 3,
+        VIS_RING     = 4,
+        VIS_SPOKES   = 5
+    };
+
+    constexpr uint32 DEFAULT_VISUAL_CASTER = 9530999;   // creature from the module SQL (invisible display 11686)
+    constexpr uint32 MAX_VISUAL_BURSTS = 150;           // casters per attack; a wave widens its spacing to stay below
+    constexpr uint32 KIT_CASTER_TAIL_MS = 5000;         // a caster stays this long after its kit (the effect plays out)
 
     struct Attack
     {
-        uint32 boss = 0, delayMs = 3000, everyMs = 12000, firstMs = 5000, hitSpell = 0, visualSpell = 0;
-        uint8 id = 0, shape = ATK_NOVA, count = 0, textType = 41, next = 0;
-        float size = 0.0f, param = 0.0f, spread = 0.0f, visualScale = 0.0f;
+        uint32 boss = 0, delayMs = 3000, everyMs = 12000, firstMs = 5000, hitSpell = 0, visualKit = 0, visualPace = 0, beamSpell = 0, novaKit = 0;
+        uint8 id = 0, shape = ATK_NOVA, count = 0, next = 0, visualMode = VIS_BY_SHAPE;
+        float size = 0.0f, param = 0.0f, spread = 0.0f, visualScale = 0.0f, visualSpacing = 0.0f, visualZoff = 0.0f, novaScale = 0.0f, novaZoff = 0.0f;
         int32 hitDamage = 0;
         bool friendly = false;
-        std::string say, interruptSay, advice;
         std::vector<std::pair<float, float>> bands;
     };
 
     struct Boss
     {
-        uint32 entry = 0, yieldPct = 0, advisor = 0, visualCaster = 0, deathSummon = 0, deathDespawnS = 900, walker = 0;
+        uint32 entry = 0, yieldPct = 0, visualCaster = 0, deathSummon = 0, deathDespawnS = 900, walker = 0;
         bool melee = false;
         float chaseDist = 0.0f, dx = 0, dy = 0, dz = 0, dorient = 0, wx = 0, wy = 0, wz = 0;
         std::string yieldSay, walkerSay;
@@ -93,7 +114,7 @@ namespace
         sAttacks.clear();
         sBosses.clear();
         sLoaded = true;
-        if (QueryResult r = WorldDatabase.Query("SELECT entry, melee, chase_dist, yield_pct, yield_say, advisor_entry, visual_caster, death_summon, "
+        if (QueryResult r = WorldDatabase.Query("SELECT entry, melee, chase_dist, yield_pct, yield_say, visual_caster, death_summon, "
             "death_x, death_y, death_z, death_o, death_despawn_s, walker_entry, walker_x, walker_y, walker_z, walker_say FROM ground_telegraph_boss"))
         {
             do
@@ -105,24 +126,23 @@ namespace
                 b.chaseDist = f[2].Get<float>();
                 b.yieldPct = f[3].Get<uint8>();
                 b.yieldSay = f[4].Get<std::string>();
-                b.advisor = f[5].Get<uint32>();
-                b.visualCaster = f[6].Get<uint32>();
-                b.deathSummon = f[7].Get<uint32>();
-                b.dx = f[8].Get<float>();
-                b.dy = f[9].Get<float>();
-                b.dz = f[10].Get<float>();
-                b.dorient = f[11].Get<float>();
-                b.deathDespawnS = f[12].Get<uint32>();
-                b.walker = f[13].Get<uint32>();
-                b.wx = f[14].Get<float>();
-                b.wy = f[15].Get<float>();
-                b.wz = f[16].Get<float>();
-                b.walkerSay = f[17].Get<std::string>();
+                b.visualCaster = f[5].Get<uint32>();
+                b.deathSummon = f[6].Get<uint32>();
+                b.dx = f[7].Get<float>();
+                b.dy = f[8].Get<float>();
+                b.dz = f[9].Get<float>();
+                b.dorient = f[10].Get<float>();
+                b.deathDespawnS = f[11].Get<uint32>();
+                b.walker = f[12].Get<uint32>();
+                b.wx = f[13].Get<float>();
+                b.wy = f[14].Get<float>();
+                b.wz = f[15].Get<float>();
+                b.walkerSay = f[16].Get<std::string>();
                 sBosses[b.entry] = b;
             } while (r->NextRow());
         }
         if (QueryResult r = WorldDatabase.Query("SELECT boss_entry, attack_id, shape, size, param, `count`, spread, bands, delay_ms, every_ms, first_ms, "
-            "next_attack, hit_spell, hit_damage, friendly, visual_spell, visual_scale, say, text_type, interrupt_say, advice "
+            "next_attack, hit_spell, hit_damage, friendly, visual_kit, visual_mode, visual_scale, visual_spacing, visual_pace, visual_zoff, beam_spell, nova_kit, nova_scale, nova_zoff "
             "FROM ground_telegraph_attack ORDER BY boss_entry, attack_id"))
         {
             do
@@ -144,12 +164,16 @@ namespace
                 a.hitSpell = f[12].Get<uint32>();
                 a.hitDamage = f[13].Get<int32>();
                 a.friendly = f[14].Get<uint8>() != 0;
-                a.visualSpell = f[15].Get<uint32>();
-                a.visualScale = f[16].Get<float>();
-                a.say = f[17].Get<std::string>();
-                a.textType = f[18].Get<uint8>();
-                a.interruptSay = f[19].Get<std::string>();
-                a.advice = f[20].Get<std::string>();
+                a.visualKit = f[15].Get<uint32>();
+                a.visualMode = f[16].Get<uint8>();
+                a.visualScale = f[17].Get<float>();
+                a.visualSpacing = f[18].Get<float>();
+                a.visualPace = f[19].Get<uint32>();
+                a.visualZoff = f[20].Get<float>();
+                a.beamSpell = f[21].Get<uint32>();
+                a.novaKit = f[22].Get<uint32>();
+                a.novaScale = f[23].Get<float>();
+                a.novaZoff = f[24].Get<float>();
                 sAttacks[a.boss].push_back(a);
             } while (r->NextRow());
         }
@@ -170,19 +194,6 @@ namespace
             Load();
         auto it = sBosses.find(entry);
         return it == sBosses.end() ? nullptr : &it->second;
-    }
-
-    void Text(Creature* me, Attack const& a, std::string const& text)
-    {
-        if (text.empty())
-            return;
-        switch (a.textType)
-        {
-            case 12: me->Say(text, LANG_UNIVERSAL); break;
-            case 14: me->Yell(text, LANG_UNIVERSAL); break;
-            case 16: me->TextEmote(text); break;
-            default: me->TextEmote(text, nullptr, true); break;   // 41 = boss emote (centre of the screen)
-        }
     }
 }
 
@@ -205,6 +216,7 @@ public:
         std::vector<int32> _timers;
         std::vector<GroundTelegraph::Mark> _marks;          // the marks of the pending attack (the hit test)
         std::vector<ObjectGuid> _guids;
+        std::vector<ObjectGuid> _kitCasters;                // invisible casters of the visuals still to play
         int32 _pending = -1;                                // index of the attack on the ground, -1 = none
         int32 _casting = -1;                                // index of a cast attack being cast, -1 = none
         uint32 _eruptIn = 0, _faceIn = 0;
@@ -225,9 +237,19 @@ public:
             _pending = -1;
         }
 
+        // visuals not played yet (evade, death, yield): their casters go, so the scheduled kits find nothing
+        void CancelVisuals()
+        {
+            for (ObjectGuid const& g : _kitCasters)
+                if (Creature* c = ObjectAccessor::GetCreature(*me, g))
+                    c->DespawnOrUnsummon();
+            _kitCasters.clear();
+        }
+
         void Reset() override
         {
             Clear();
+            CancelVisuals();
             _casting = -1;
             _yielded = false;
             _timers.clear();
@@ -260,6 +282,7 @@ public:
         void EnterEvadeMode(EvadeReason why) override
         {
             Clear();
+            CancelVisuals();
             _casting = -1;
             me->InterruptNonMeleeSpells(false);
             me->SetControlled(false, UNIT_STATE_ROOT);
@@ -269,6 +292,7 @@ public:
         void JustDied(Unit* /*killer*/) override
         {
             Clear();
+            CancelVisuals();
             Boss const* b = Row();
             if (!b)
                 return;
@@ -310,6 +334,7 @@ public:
         {
             _yielded = true;
             Clear();
+            CancelVisuals();
             _casting = -1;
             me->InterruptNonMeleeSpells(false);
             for (auto const& ref : me->GetMap()->GetPlayers())
@@ -346,12 +371,6 @@ public:
             if (!target)
                 return;
             me->SetFacingToObject(target);
-            Text(me, a, a.say);
-            if (!a.advice.empty())   // a friendly advisor nearby calls out what to do
-                if (Boss const* b = Row())
-                    if (b->advisor)
-                        if (Creature* adv = me->FindNearestCreature(b->advisor, 60.0f, true))
-                            adv->Say(a.advice, LANG_UNIVERSAL);
             if (a.shape == ATK_CAST)
             {
                 // a real cast with its cast bar; power cost ignored. Interrupts stop it (unless the spell can't be).
@@ -427,7 +446,9 @@ public:
                     return;
             }
             _pending = int32(i);
-            _eruptIn = a.delayMs;
+            // the fill of the model actually drawn (the nearest duration in the grid), then a short beat while it is full
+            _eruptIn = _marks.empty() ? a.delayMs : GroundTelegraph::HitMs(_marks.front());
+            PlanVisual(a, _eruptIn);
         }
 
         bool Inside(Player* p) const
@@ -459,78 +480,195 @@ public:
             me->CastSpell(p, a.hitSpell, true);
         }
 
-        Creature* VisualCaster(float x, float y, float z, float o, uint32 ms)
+        struct Burst
+        {
+            float x, y, o, scale;
+            uint32 at;    // ms after the hit
+            uint32 kit;
+            float zoff;
+        };
+
+        // the points of one mark for a visual mode, at spacing sp (yd); at = ms after the hit, within `pace`
+        void Points(Attack const& a, GroundTelegraph::Mark const& m, uint8 mode, float sp, uint32 pace, std::vector<Burst>& out) const
+        {
+            float sc = a.visualScale > 0.0f ? a.visualScale : 1.0f;
+            bool wedge = m.shape == GroundTelegraph::SHAPE_CONE;
+            float half = wedge ? m.param * float(M_PI) / 360.0f : float(M_PI);
+            float inner = m.shape == GroundTelegraph::SHAPE_DONUT ? m.param : 0.0f;
+            float outer = std::max(inner + 0.5f, m.size);
+            auto add = [&](float d, float t, uint32 at, float scale)
+            {
+                float o = (wedge ? m.facing : 0.0f) + t;
+                out.push_back({ m.x + d * std::cos(o), m.y + d * std::sin(o), o, scale, at, a.visualKit, a.visualZoff });
+            };
+            switch (mode)
+            {
+                case VIS_WAVE:   // rows (cone) or rings (disc, donut) sweeping out from the origin
+                    for (float d = std::max(inner, sp * 0.5f); d <= outer + 0.01f; d += sp)
+                    {
+                        uint32 n = std::max<uint32>(1, uint32(std::lround(2.0f * half * d / sp)) + (wedge ? 1 : 0));
+                        uint32 at = uint32(float(pace) * (d - inner) / std::max(0.5f, outer - inner));
+                        for (uint32 k = 0; k < n; ++k)
+                            add(d, wedge ? (n == 1 ? 0.0f : 0.9f * (-half + 2.0f * half * float(k) / float(n - 1)))
+                                : 2.0f * float(M_PI) * float(k) / float(n), at, sc);
+                    }
+                    break;
+                case VIS_SCATTER:   // points over the area, each at a random moment within the pace
+                {
+                    float area = half * (outer * outer - inner * inner);
+                    uint32 n = std::max<uint32>(4, std::min<uint32>(90, uint32(area / (sp * sp))));
+                    for (uint32 k = 0; k < n; ++k)
+                        add(std::sqrt(frand(inner * inner, outer * outer)), wedge ? 0.9f * frand(-half, half) : frand(0.0f, 2.0f * float(M_PI)),
+                            urand(0, pace), sc);
+                    break;
+                }
+                case VIS_SPOKES:
+                {
+                    // spokes (user design 2026-11-27): M radial lines across the ring, `sp` apart on its middle circle, each
+                    // with k bursts (ring width / sp, 1-5) going off together. S seed spokes (one per ~25 yd of circle, >= 3)
+                    // start first; each step lights the next spoke on both sides of every seed until the waves meet. M is a
+                    // multiple of S, so every segment is the same: deterministic count and timing.
+                    float mid = (outer + inner) / 2.0f, circ = 2.0f * float(M_PI) * mid;
+                    uint32 seeds = std::max<uint32>(3, uint32(std::lround(circ / 25.0f)));
+                    uint32 per = std::max<uint32>(1, uint32(std::lround(circ / sp / float(seeds))));
+                    uint32 spokes = per * seeds;
+                    uint32 k = std::max<uint32>(1, std::min<uint32>(5, uint32(std::lround((outer - inner) / sp))));
+                    uint32 steps = per / 2 + 1;
+                    uint32 stepMs = steps > 1 ? pace / (steps - 1) : 0;
+                    float off = frand(0.0f, 2.0f * float(M_PI));   // where the first seed sits
+                    for (uint32 i = 0; i < spokes; ++i)
+                    {
+                        uint32 q = i % per;
+                        uint32 at = std::min(q, per - q) * stepMs;
+                        float t = off + 2.0f * float(M_PI) * float(i) / float(spokes);
+                        for (uint32 j = 0; j < k; ++j)
+                            add(inner + (float(j) + 0.5f) * (outer - inner) / float(k), t, at, sc);
+                    }
+                    break;
+                }
+                case VIS_RING:   // points on the middle of the ring (a disc: half its radius)
+                {
+                    float mid = (outer + inner) / 2.0f;
+                    uint32 n = std::max<uint32>(4, uint32(std::lround(2.0f * float(M_PI) * mid / sp)));
+                    for (uint32 k = 0; k < n; ++k)
+                        add(mid, 2.0f * float(M_PI) * float(k) / float(n), urand(0, pace), sc);
+                    break;
+                }
+                default:   // VIS_SINGLE: the centre; a nova attack scales it with its radius (visual_scale = at 10 yd)
+                    add(0.0f, 0.0f, a.shape == ATK_ERUPT ? urand(0, pace) : 0, a.shape == ATK_NOVA ? sc * m.size / 10.0f : sc);
+                    break;
+            }
+        }
+
+        // an invisible caster on the ground at x, y (+ zoff yd), gone after lifeMs; cancelled with the fight
+        Creature* PlaceCaster(float x, float y, float z, float o, uint32 lifeMs, float zoff = 0.0f)
         {
             Boss const* b = Row();
             uint32 entry = b && b->visualCaster ? b->visualCaster : DEFAULT_VISUAL_CASTER;
-            Creature* c = me->SummonCreature(entry, x, y, z, o, TEMPSUMMON_TIMED_DESPAWN, ms);
-            if (c)
-            {
-                c->SetFaction(35);
-                c->SetReactState(REACT_PASSIVE);
-            }
+            me->UpdateGroundPositionZ(x, y, z);
+            // the caster flies (creature_template_movement Flight 1): with gravity a caster below the ground showed no kit
+            Creature* c = me->SummonCreature(entry, x, y, z + zoff, o, TEMPSUMMON_TIMED_DESPAWN, lifeMs);
+            if (!c)
+                return nullptr;
+            c->SetFaction(35);
+            c->SetReactState(REACT_PASSIVE);
+            _kitCasters.push_back(c->GetGUID());
             return c;
         }
 
-        // How an attack looks when it goes off (visual_spell): line = the boss casts it at a caster at the far end (a beam);
-        // cone / nova = cast on the boss, or on a caster of visual_scale at the boss (a spell visual grows with its caster);
-        // donut / dance = casters around each ring; erupt = a caster on each mark.
-        void Visual(Attack const& a)
+        // The visual of an attack, placed when its marks go down: one invisible caster per burst NOW (the client must know
+        // it before the kit packet; the fill is >= 2 s), the kit sent at hit + the burst's moment. A kit plays once (a
+        // gameobject with a spell model loops it while it fades); its size = caster scale x the kit effect's own Scale.
+        // nova_kit: every disc of a dance plays it once in its centre (nova_scale = at 10 yd); its rings keep visual_kit.
+        void PlanVisual(Attack const& a, uint32 hitMs)
         {
-            if (!a.visualSpell || _marks.empty())
+            _kitCasters.erase(std::remove_if(_kitCasters.begin(), _kitCasters.end(),
+                [this](ObjectGuid const& g) { return !ObjectAccessor::GetCreature(*me, g); }), _kitCasters.end());
+            PlanBeam(a, hitMs);
+            if ((!a.visualKit && !a.novaKit) || _marks.empty() || a.shape == ATK_LINE)
                 return;
-            if (a.shape == ATK_LINE)
+            uint32 pace = a.visualPace ? a.visualPace : 800;
+            float sp = std::max(1.0f, a.visualSpacing > 0.0f ? a.visualSpacing : 2.0f);
+            std::vector<Burst> bursts;
+            for (uint32 tries = 0; tries < 4; ++tries)
             {
-                GroundTelegraph::Mark const& m = _marks.front();
-                me->SetFacingTo(_ang);
-                if (Creature* c = VisualCaster(m.x + m.size * std::cos(m.facing), m.y + m.size * std::sin(m.facing), m.z + 1.0f, 0.0f, 2500))
-                    me->CastSpell(c, a.visualSpell, true);
-                return;
-            }
-            if (a.shape == ATK_CONE || a.shape == ATK_NOVA)
-            {
-                float o = a.shape == ATK_CONE ? _ang : me->GetOrientation();
-                if (a.visualScale > 0.0f)
+                bursts.clear();
+                for (GroundTelegraph::Mark const& m : _marks)
                 {
-                    if (Creature* c = VisualCaster(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), o, 5000))
+                    bool disc = m.shape == GroundTelegraph::SHAPE_NOVA && (a.shape == ATK_DANCE || a.shape == ATK_DONUT);
+                    if (disc && a.novaKit)
                     {
-                        c->SetObjectScale(a.visualScale);
-                        c->SetFacingTo(o);
-                        c->CastSpell(c, a.visualSpell, true);
+                        float ns = (a.novaScale > 0.0f ? a.novaScale : 1.0f) * m.size / 10.0f;
+                        bursts.push_back({ m.x, m.y, 0.0f, ns, 0, a.novaKit, a.novaZoff });
+                        continue;
                     }
-                    return;
+                    if (!a.visualKit)
+                        continue;
+                    uint8 mode = a.visualMode;
+                    if (mode == VIS_BY_SHAPE)
+                        mode = a.shape == ATK_CONE ? VIS_WAVE : (a.shape == ATK_NOVA || a.shape == ATK_ERUPT) ? VIS_SINGLE : VIS_SPOKES;
+                    Points(a, m, mode, sp, pace, bursts);
                 }
-                if (a.shape == ATK_CONE)
-                    me->SetFacingTo(_ang);
-                me->CastSpell(me, a.visualSpell, true);
-                return;
+                if (bursts.size() <= MAX_VISUAL_BURSTS)
+                    break;
+                sp *= 1.05f * std::sqrt(float(bursts.size()) / float(MAX_VISUAL_BURSTS));   // a big cone: wider spacing, same look
             }
-            std::vector<Position> points;
+            if (bursts.size() > MAX_VISUAL_BURSTS)
+                bursts.resize(MAX_VISUAL_BURSTS);
+            for (Burst const& u : bursts)
+            {
+                Creature* c = PlaceCaster(u.x, u.y, _marks.front().z + 4.0f, u.o, hitMs + u.at + KIT_CASTER_TAIL_MS, u.zoff);
+                if (!c)
+                    continue;
+                c->SetObjectScale(std::max(0.01f, u.scale));
+                ObjectGuid g = c->GetGUID();
+                uint32 kit = u.kit;
+                Creature* self = me;
+                me->m_Events.AddEventAtOffset([self, g, kit]()
+                {
+                    if (Creature* k = ObjectAccessor::GetCreature(*self, g))
+                        k->SendPlaySpellVisual(kit);
+                }, Milliseconds(hitMs + u.at));
+            }
+        }
+
+        // beam_spell (a no-damage visual spell): a line = the boss casts it at a caster at the far end when the attack lands
+        // (a beam); erupt = the boss casts it at a caster on each mark, launched so that a missile lands on the hit
+        // (travel = distance / the spell's Speed). The casters are placed now, so the client knows them in time.
+        void PlanBeam(Attack const& a, uint32 hitMs)
+        {
+            if (!a.beamSpell || _marks.empty() || (a.shape != ATK_LINE && a.shape != ATK_ERUPT))
+                return;
+            SpellInfo const* si = sSpellMgr->GetSpellInfo(a.beamSpell);
+            if (!si)
+                return;
+            uint32 spell = a.beamSpell;
+            float ang = _ang;
             for (GroundTelegraph::Mark const& m : _marks)
             {
-                if (m.shape == GroundTelegraph::SHAPE_NOVA && a.shape == ATK_ERUPT)
+                float x = m.x, y = m.y;
+                if (a.shape == ATK_LINE)
                 {
-                    points.emplace_back(m.x, m.y, m.z);
+                    x += m.size * std::cos(m.facing);
+                    y += m.size * std::sin(m.facing);
+                }
+                Creature* t = PlaceCaster(x, y, m.z + 4.0f, 0.0f, hitMs + KIT_CASTER_TAIL_MS, a.shape == ATK_LINE ? 1.0f : 0.0f);
+                if (!t)
                     continue;
-                }
-                float mid = (m.size + (m.shape == GroundTelegraph::SHAPE_DONUT ? m.param : 0.0f)) / 2.0f;
-                uint32 n = std::max<uint32>(6, std::min<uint32>(24, uint32(2.0f * float(M_PI) * mid / 6.0f)));
-                for (uint32 k = 0; k < n; ++k)
+                uint32 travel = si->Speed > 0.0f ? uint32(1000.0f * me->GetExactDist2d(x, y) / si->Speed) : 0;
+                uint32 at = hitMs > travel ? hitMs - travel : 0;
+                ObjectGuid g = t->GetGUID();
+                Creature* self = me;
+                bool line = a.shape == ATK_LINE;
+                me->m_Events.AddEventAtOffset([self, g, spell, line, ang]()
                 {
-                    float t = 2.0f * float(M_PI) * float(k) / float(n);
-                    points.emplace_back(m.x + mid * std::cos(t), m.y + mid * std::sin(t), m.z);
-                }
-            }
-            for (Position& pt : points)
-            {
-                float x = pt.GetPositionX(), y = pt.GetPositionY(), z = pt.GetPositionZ() + 4.0f;
-                me->UpdateGroundPositionZ(x, y, z);
-                if (Creature* c = VisualCaster(x, y, z + 0.2f, 0.0f, 3000))
-                {
-                    if (a.visualScale > 0.0f)
-                        c->SetObjectScale(a.visualScale);
-                    c->CastSpell(c, a.visualSpell, true);
-                }
+                    if (Creature* k = ObjectAccessor::GetCreature(*self, g))
+                    {
+                        if (line)
+                            self->SetFacingTo(ang);
+                        self->CastSpell(k, spell, true);
+                    }
+                }, Milliseconds(at));
             }
         }
 
@@ -551,13 +689,12 @@ public:
                     if (Inside(p))
                         Hit(a, p);   // one hit per player per attack
                 }
-                Visual(a);
                 if (a.next)
                     for (uint32 k = 0; k < rows->size(); ++k)
                         if ((*rows)[k].id == a.next)
                             follow = int32(k);
             }
-            Clear();
+            Clear();   // the marks go at once (no fade), in the same update as the hit and the first bursts
             if (follow >= 0 && me->IsAlive() && me->GetVictim())
                 Start(uint32(follow));   // the dance: the next attack goes down at once
         }
@@ -573,10 +710,7 @@ public:
         {
             std::vector<Attack> const* rows = Rows();
             if (rows && _casting >= 0 && uint32(_casting) < rows->size() && spell && spell->Id == (*rows)[_casting].hitSpell)
-            {
-                Text(me, (*rows)[_casting], (*rows)[_casting].interruptSay);   // stopped (interrupt, stun)
-                _casting = -1;
-            }
+                _casting = -1;   // stopped (interrupt, stun)
         }
 
         void UpdateAI(uint32 diff) override

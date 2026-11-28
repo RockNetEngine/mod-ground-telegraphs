@@ -19,15 +19,15 @@ DELETE FROM `ground_telegraph_boss` WHERE `entry` = 9530998;
 INSERT INTO `ground_telegraph_boss` (`entry`, `melee`, `chase_dist`, `comment`) VALUES
 (9530998, 0, 0, 'example: a rooted caster');
 
--- hit_spell gives the school / combat log name of hit_damage (133 Fireball, 116 Frostbolt); cast rows really cast it.
+-- No visual_kit here: kits are client data (see README, Attack visuals). hit_spell gives the school / combat log name of hit_damage (133 Fireball, 116 Frostbolt); cast rows really cast it.
 DELETE FROM `ground_telegraph_attack` WHERE `boss_entry` = 9530998;
 INSERT INTO `ground_telegraph_attack` (`boss_entry`, `attack_id`, `shape`, `size`, `param`, `count`, `spread`, `bands`, `delay_ms`, `every_ms`, `first_ms`,
-  `next_attack`, `hit_spell`, `hit_damage`, `friendly`, `visual_spell`, `say`, `comment`) VALUES
-(9530998, 1, 3, 10, 0, 0, 0, '', 3000, 30000, 4000, 0, 133, 1500, 0, 0, '%s gathers fire around itself!', 'nova: 10 yd disc'),
-(9530998, 2, 1, 40, 2, 0, 0, '', 2500, 30000, 9000, 0, 133, 1500, 0, 0, '%s takes aim at you.', 'line: 2 x 40 yd beam'),
-(9530998, 3, 2, 30, 60, 0, 0, '', 3000, 30000, 14000, 0, 133, 1500, 0, 0, '%s draws a deep breath.', 'cone: 60 degrees, 30 yd'),
-(9530998, 4, 4, 30, 10, 0, 0, '', 3500, 30000, 19000, 0, 116, 1500, 0, 0, 'Get close to %s!', 'donut: safe within 10 yd'),
-(9530998, 5, 6, 0, 0, 0, 0, '0-10,20-35', 4000, 45000, 24000, 6, 133, 1500, 0, 0, '%s pulses in rings!', 'dance part 1'),
-(9530998, 6, 6, 0, 0, 0, 0, '10-20', 3000, 0, 0, 0, 133, 1500, 0, 0, 'The rings invert!', 'dance part 2 (every_ms 0 = only after 5)'),
-(9530998, 7, 5, 3, 0, 4, 8, '', 3000, 30000, 29000, 0, 133, 1000, 0, 0, 'The ground erupts!', 'erupt: 4 small novas on and around you'),
-(9530998, 8, 7, 0, 0, 0, 0, '', 0, 8000, 2000, 0, 116, 0, 0, 0, '', 'cast: a real Frostbolt (interruptible)');
+  `next_attack`, `hit_spell`, `hit_damage`, `friendly`, `visual_kit`, `comment`) VALUES
+(9530998, 1, 3, 10, 0, 0, 0, '', 3000, 30000, 4000, 0, 133, 1500, 0, 0, 'nova: 10 yd disc'),
+(9530998, 2, 1, 40, 2, 0, 0, '', 2500, 30000, 9000, 0, 133, 1500, 0, 0, 'line: 2 x 40 yd beam'),
+(9530998, 3, 2, 30, 60, 0, 0, '', 3000, 30000, 14000, 0, 133, 1500, 0, 0, 'cone: 60 degrees, 30 yd'),
+(9530998, 4, 4, 30, 10, 0, 0, '', 3500, 30000, 19000, 0, 116, 1500, 0, 0, 'donut: safe within 10 yd'),
+(9530998, 5, 6, 0, 0, 0, 0, '0-10,20-35', 4000, 45000, 24000, 6, 133, 1500, 0, 0, 'dance part 1'),
+(9530998, 6, 6, 0, 0, 0, 0, '10-20', 3000, 0, 0, 0, 133, 1500, 0, 0, 'dance part 2 (every_ms 0 = only after 5)'),
+(9530998, 7, 5, 3, 0, 4, 8, '', 3000, 30000, 29000, 0, 133, 1000, 0, 0, 'erupt: 4 small novas on and around you'),
+(9530998, 8, 7, 0, 0, 0, 0, '', 0, 8000, 2000, 0, 116, 0, 0, 0, 'cast: a real Frostbolt (interruptible)');

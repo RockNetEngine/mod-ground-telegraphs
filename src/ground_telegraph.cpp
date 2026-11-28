@@ -195,9 +195,26 @@ namespace GroundTelegraph
 
     void Remove(WorldObject* owner, ObjectGuid const& guid)
     {
-        if (owner && guid)
-            if (GameObject* go = ObjectAccessor::GetGameObject(*owner, guid))
-                go->DespawnOrUnsummon();
+        if (!owner || !guid)
+            return;
+        if (GameObject* go = ObjectAccessor::GetGameObject(*owner, guid))
+        {
+            // DespawnOrUnsummon plays the fade-out, and the client keeps the mark on the ground during it (it lingered
+            // after the hit): destroy it for the players who see it and take it off the map instead
+            go->DestroyForVisiblePlayers();
+            go->AddObjectToRemoveList();
+        }
+    }
+
+    uint32 FillMs(Mark const& m)
+    {
+        MarkVariant const* v = Pick(m);
+        return v ? v->durationMs : m.durationMs;
+    }
+
+    uint32 HitMs(Mark const& m)
+    {
+        return FillMs(m) + FULL_HOLD_MS;
     }
 
     bool Contains(Mark const& m, float px, float py)
@@ -232,7 +249,8 @@ namespace GroundTelegraph
     }
 }
 
-// .telegraph line|cone|nova|donut [size] [param] [ms] [friendly 0/1]   and   .telegraph reload
+// .groundmark line|cone|nova|donut [size] [param] [ms] [friendly 0/1]   and   .groundmark reload
+// (was .telegraph until 1.1: it clashed with .teleport when typing .tele)
 // Draws one mark at your feet facing where you face. Defaults: line 40 x 2, cone 40 yd 60 deg, nova 10, donut 40 / 20; 3000 ms.
 class ground_telegraph_commands : public CommandScript
 {
@@ -241,7 +259,7 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable root = { { "telegraph", HandleTelegraph, SEC_GAMEMASTER, Console::No } };
+        static ChatCommandTable root = { { "groundmark", HandleTelegraph, SEC_GAMEMASTER, Console::No } };
         return root;
     }
 
@@ -263,7 +281,7 @@ public:
         else if (what == "donut") { m.shape = GroundTelegraph::SHAPE_DONUT; m.size = 40.0f; m.param = 20.0f; }
         else
         {
-            handler->SendSysMessage("Usage: .telegraph line|cone|nova|donut [size] [param] [ms] [friendly 0/1]  or  .telegraph reload");
+            handler->SendSysMessage("Usage: .groundmark line|cone|nova|donut [size] [param] [ms] [friendly 0/1]  or  .groundmark reload");
             return true;
         }
         if (size && *size > 0.0f)
@@ -279,7 +297,7 @@ public:
         if (!GroundTelegraph::Draw(p, m))
             handler->SendSysMessage("No mark drawn: no ground_telegraph_variant rows (run the module SQL) or no variant for that shape.");
         else
-            handler->PSendSysMessage("telegraph {} size {:.1f} param {:.1f}, {} ms{}.", what, m.size, m.param, m.durationMs, m.friendly ? ", friendly" : "");
+            handler->PSendSysMessage("groundmark {} size {:.1f} param {:.1f}, {} ms{}.", what, m.size, m.param, m.durationMs, m.friendly ? ", friendly" : "");
         return true;
     }
 };

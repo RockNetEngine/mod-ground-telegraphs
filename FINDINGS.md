@@ -89,7 +89,27 @@ We generated every model from scratch in Python (`tools/telegraph_assets.py`). T
 - Hit tests are plain 2D geometry (distance, angle, along / across a line) at the moment the mark ends, plus a height
   window. They don't depend on the art.
 
+## 4b. Attack visuals: one-shot spell effects (1.1)
+
+- **A gameobject with a spell model cannot play an effect once.** The client loops the model's animation while the object
+  fades in and out, so a burst played 2-3 times whatever the server did (the server log proved the object removed after
+  184-580 ms). Despawning with the fade made it worse.
+- **A SpellVisualKit played on a unit plays once** (`Unit::SendPlaySpellVisual(kit)`, no spell needed). Use an invisible
+  creature (display 11686, `InvisibleStalker.mdx`; the stock stalker also rolls a visible tiny infernal) and spawn it
+  about a second before the kit: the client has to know the unit first.
+- **Kit size = the caster's object scale x the `Scale` of the kit's SpellVisualEffectName row** (field 4, clamped to
+  fields 5-6). Stock rows carry their own Scale (one has 3.5), so give your own kit rows Scale 1 and the caster's scale is
+  the size.
+- **The invisible caster must fly.** A clone of the Invisible Stalker made by copying `creature_template` only loses its
+  `creature_template_movement` row (Flight 1) and becomes a ground unit: every kit placed below the ground (to sink a
+  model that rises) showed nothing. With the flyer row the client keeps the exact height.
+- **Remove a mark without the despawn fade** (`DestroyForVisiblePlayers` + `AddObjectToRemoveList`); with the fade the
+  client kept drawing it after the hit. The fill is baked into the model, so land the attack when the model's own fill
+  ends (`GroundTelegraph::HitMs`), not at the requested delay.
+- Stock beams can carry attributes that hide them (`DO_NOT_DISPLAY`, `ON_NEXT_SWING`); a beam drawn by a channel kit only
+  shows while the spell is channelled.
+
 ## 5. Reproduce it
 
-`.telegraph nova 10` (GM) draws a 10 yd nova at your feet once the module and its client patch are installed. The
+`.groundmark nova 10` (GM; `.telegraph` before 1.1) draws a 10 yd nova at your feet once the module and its client patch are installed. The
 generator, the model writer and the BLP writer are in `tools/` (MIT).

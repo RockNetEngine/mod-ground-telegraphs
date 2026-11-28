@@ -13,8 +13,9 @@
  *   m.size = 40.0f; m.param = 20.0f;          // outer / inner radius
  *   m.durationMs = 3000;
  *   ObjectGuid g = GroundTelegraph::Draw(boss, m);
- *   ... 3 s later: if (GroundTelegraph::Contains(m, player->GetPositionX(), player->GetPositionY())) hit it;
- *   GroundTelegraph::Remove(boss, g);
+ *   ... GroundTelegraph::HitMs(m) later (the fill is full, plus a short beat):
+ *   GroundTelegraph::Remove(boss, g);         // gone at once, no fade
+ *   if (GroundTelegraph::Contains(m, player->GetPositionX(), player->GetPositionY())) hit it;
  *
  * Data-driven bosses without C++: ScriptName npc_ground_telegraph_boss + rows in ground_telegraph_boss /
  * ground_telegraph_attack (see README.md).
@@ -47,10 +48,19 @@ namespace GroundTelegraph
         uint32 durationMs = 3000;             // time to impact: the fill reaches the border then
     };
 
-    // Spawns the mark; it despawns by itself about 2 s after durationMs (or call Remove). Empty guid when no variant
+    // How long a full mark stays on the ground before it is removed and the attack lands (user 2026-11-27: 250 ms felt
+    // like a fade in combat; 0 = the mark goes the moment its fill ends).
+    constexpr uint32 FULL_HOLD_MS = 0;
+
+    // Spawns the mark; it despawns by itself about 2 s after its fill (or call Remove). Empty guid when no variant
     // is loaded for that shape / colour.
     ObjectGuid Draw(WorldObject* owner, Mark const& m);
+    // Removes the mark at once (no despawn fade: the client keeps drawing a fading object).
     void Remove(WorldObject* owner, ObjectGuid const& guid);
+    // The fill time of the model Draw picks for this mark (the nearest duration in the grid), in ms.
+    uint32 FillMs(Mark const& m);
+    // When to remove the mark and land the attack, counted from Draw: FillMs + FULL_HOLD_MS.
+    uint32 HitMs(Mark const& m);
     // Exact hit test on the ground plane.
     bool Contains(Mark const& m, float px, float py);
     // Reloads ground_telegraph_variant and the boss tables; returns the number of mark variants.

@@ -18,8 +18,7 @@ CREATE TABLE IF NOT EXISTS `ground_telegraph_boss` (
   `chase_dist` FLOAT NOT NULL DEFAULT 0 COMMENT 'caster: 0 = rooted in place, > 0 = keeps this distance',
   `yield_pct` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '> 0: at this health % it gives up (kill credit, turns friendly, leaves)',
   `yield_say` VARCHAR(255) NOT NULL DEFAULT '',
-  `advisor_entry` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'a nearby creature that says an attack''s advice',
-  `visual_caster` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'creature that plays visual_spell; 0 = 9530999',
+  `visual_caster` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'invisible creature that plays visual_kit; 0 = 9530999',
   `death_summon` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'creature summoned at death_x/y/z/o when the boss dies',
   `death_x` FLOAT NOT NULL DEFAULT 0,
   `death_y` FLOAT NOT NULL DEFAULT 0,
@@ -52,12 +51,16 @@ CREATE TABLE IF NOT EXISTS `ground_telegraph_attack` (
   `hit_spell` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'with hit_damage: its school and log name; without: cast on each player hit',
   `hit_damage` INT NOT NULL DEFAULT 0 COMMENT 'direct damage per player hit (exact, never misses)',
   `friendly` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '1 = green mark, hit_spell cast on friendly players inside',
-  `visual_spell` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'played when the attack goes off (see README)',
-  `visual_scale` FLOAT NOT NULL DEFAULT 0 COMMENT '> 0: the visual caster is scaled (a breath / nova visual grows with it)',
-  `say` VARCHAR(255) NOT NULL DEFAULT '',
-  `text_type` TINYINT UNSIGNED NOT NULL DEFAULT 41 COMMENT '12 say, 14 yell, 16 emote, 41 boss emote',
-  `interrupt_say` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'cast: said when the cast is stopped',
-  `advice` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'said by the boss''s advisor_entry',
+  `visual_kit` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'SpellVisualKit played once per burst when the attack lands; 0 = none (see README)',
+  `visual_mode` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 by shape, 1 wave, 2 scatter, 3 single, 4 ring',
+  `visual_scale` FLOAT NOT NULL DEFAULT 0 COMMENT 'caster scale per burst (0 = 1); single on a nova: the scale for a 10 yd radius',
+  `visual_spacing` FLOAT NOT NULL DEFAULT 0 COMMENT 'yd between bursts (0 = 2)',
+  `visual_pace` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'ms for a wave to cross the mark, or the window of scattered bursts (0 = 800)',
+  `visual_zoff` FLOAT NOT NULL DEFAULT 0 COMMENT 'yd added to the ground height of each burst',
+  `beam_spell` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'line: beam to the far end; erupt: a missile onto each mark (see README)',
+  `nova_kit` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'dance / donut: kit played once in the centre of each disc band',
+  `nova_scale` FLOAT NOT NULL DEFAULT 0 COMMENT 'nova_kit caster scale for a 10 yd radius (follows the radius)',
+  `nova_zoff` FLOAT NOT NULL DEFAULT 0 COMMENT 'yd added to the ground height of the nova',
   `comment` VARCHAR(255) NOT NULL DEFAULT '',
   PRIMARY KEY (`boss_entry`, `attack_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mod-ground-telegraphs: boss attacks';
@@ -75,3 +78,8 @@ INSERT INTO `creature_template` SELECT * FROM `tmp_ground_telegraph_ct`;
 DROP TEMPORARY TABLE `tmp_ground_telegraph_ct`;
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`)
 VALUES (9530999, 0, 11686, 1, 1, 0);
+-- Movement as the stock Invisible Stalker 15214 (a flyer: no gravity, so the client keeps the exact height it is given;
+-- the clone above copies creature_template only, and without this row the caster was a ground unit). 1.1, 2026-11-28.
+DELETE FROM `creature_template_movement` WHERE `CreatureId` = 9530999;
+INSERT INTO `creature_template_movement` (`CreatureId`, `Ground`, `Swim`, `Flight`, `Rooted`, `Chase`, `Random`, `InteractionPauseTimer`)
+VALUES (9530999, 0, 0, 1, 0, 0, 0, NULL);
